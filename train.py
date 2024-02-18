@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 # TODO:
+# - add accuracy (correct_cls/dataset_size)
+# - continuation 
 # - better prints when training
 # - saving checkpoints
 
@@ -25,6 +27,9 @@ class TrainingExperiment:
 
     def plot_loss(self):
         plt.plot(np.concatenate(self.epoch_loss)) # concatenate different runs over the experiment
+        plt.xlabel('epoch')
+        plt.title('loss')
+        plt.legend(['train', 'validation'])
         plt.show()
 
     def train(self, optimizer, num_epoch):
@@ -72,7 +77,7 @@ class TrainingExperiment:
                         
                     epoch_loss += loss.item()
                 loss_hist[epoch, phi] = epoch_loss  
-                print(f"loss: {epoch_loss}")
+                print(f"{phase} loss: {epoch_loss}")
         self.epoch_loss.append(loss_hist)
         print(f"training finished after {epoch+1} iterations")
 
@@ -91,7 +96,9 @@ if __name__=='__main__':
     # train_data, test_data, val_data = get_data_loaders(imgs, labls, labls_2_id, 
     #                                                    batch_size=1, resize_to=resize_to)
 
+    # quick overfit to a small subset of available dataset
     tiny_data = get_smaller_dataloader(800, imgs, labls, labls_2_id, batch_size=4, resize_to=resize_to)
+    tiny_data_val = get_smaller_dataloader(400, imgs, labls, labls_2_id, batch_size=4, resize_to=resize_to)
 
     # net = Model1Vgg19(len(labls_2_id), img_size=resize_to)
     net = ModelTinyHruz(num_out_classes=len(labls_2_id), img_size=resize_to)
@@ -99,8 +106,6 @@ if __name__=='__main__':
     loss = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.002)
 
-    tr = TrainingExperiment(net, loss, tiny_data)
-    tr.train(optimizer, 10)
-    tr.plot_loss()
-
-    
+    tr = TrainingExperiment(net, loss, tiny_data, val_data=tiny_data_val)
+    tr.train(optimizer, 3)
+    tr.plot_loss()    
