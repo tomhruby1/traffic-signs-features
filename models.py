@@ -3,6 +3,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def run_inference(net, in_img_size, softmax_norm=False):
+    '''Get last layer outputs given'''
+    return
+
+
 class Model1Vgg19(nn.Module):
     def __init__(self, num_out_classes, img_size=(224,224)):
         super().__init__()
@@ -16,6 +21,23 @@ class Model1Vgg19(nn.Module):
         x = torch.flatten(x, start_dim=1) # flatten all dimensions except batch
         x = nn.functional.relu(self.fc_cls(x))
 
+        return x
+
+class ResnetTiny(nn.Module):
+    # 128 x 128 --> 4 x 4 x 512
+    # 224 x 224 --> 7 x 7 x 512
+    def __init__(self, num_out_classes, img_size=(128,128)):
+        super().__init__()
+        pretrained_model = timm.create_model('resnet10t', pretrained=True)
+        # remove the global pooling and last fc layer
+        self.pretrained_backbone = torch.nn.Sequential(*(list(pretrained_model.children())[:-2]))
+        self.fc = nn.Linear(4*4*512, num_out_classes)
+
+    def forward(self, x):
+        x = self.pretrained_backbone(x)
+        x = torch.flatten(x, start_dim=1)
+        x = self.fc(x)
+        
         return x
 
 class ModelTinyHruz(nn.Module):
@@ -49,4 +71,3 @@ class ModelTinyHruz(nn.Module):
         x = self.fc4(x)
         
         return x
-    
