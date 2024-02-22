@@ -3,11 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def run_inference(net, in_img_size, softmax_norm=False):
-    '''Get last layer outputs given'''
-    return
-
-
 class Model1Vgg19(nn.Module):
     def __init__(self, num_out_classes, img_size=(224,224)):
         super().__init__()

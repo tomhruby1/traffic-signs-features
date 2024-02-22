@@ -46,7 +46,17 @@ class TrainingExperiment:
     def export_model(self, out_dir:Path):
         out_dir = Path(out_dir)
         out_dir.mkdir(exist_ok=True, parents=True)
+        # export for inference only
         torch.save(self.net, out_dir/f"{self.net.__class__.__name__}_epoch_{self.epoch_count}.pth")
+        
+        # # export for future usage here
+        # torch.save({
+        #             'epoch': self.epoch_count,
+        #             'model_state_dict': self.net.state_dict(),
+        #             'optimizer_state_dict': self.optimizer.state_dict(),
+        #             'loss': self.epoch_loss[-1][-1],
+        #             }, 
+        #             out_dir/f"{self.net.__class__.__name__}_epoch_{self.epoch_count}.pth")
 
     def train(self, optimizer, num_epoch, scheduler=None):
         '''
@@ -55,6 +65,7 @@ class TrainingExperiment:
             - optimizer
             - num_epoch: int
         '''
+        self.optimizer = optimizer
         dataloaders = {'train': self.train_data, 'val':self.val_data}
         
         loss_hist = np.ones((num_epoch,2))*np.inf
