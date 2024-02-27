@@ -4,12 +4,14 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
-from torchvision.io import read_image
+from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transf
 import matplotlib.pyplot as plt
+import json
 
 # TODO: standardize --normalize with std and mean of the whole dataset
 
+CLASSES_FILE = 'info.json' # inside the dataset dir
 
 class Dataset(Dataset):
     def __init__(self, images:tuple, labels:tuple, id_to_label:tuple, transform=None):
@@ -78,10 +80,17 @@ def get_smaller_dataloader(size, imgs, labels, id_to_label, transform=None,
     return DataLoader(small_dataset, batch_size=batch_size)
 
 def build_dataset_out_of_dir_structure(parent_dir:Path, expected_labels:list=None):
-    '''iterates over directories named as labels returns list of images and label'''
+    '''
+    iterates over directories named as labels returns list of images and label
+
+    returns: (images, labels, labels_to_id, label_counts)
+    '''
+    IMG_SUFFIXES = ["jpg","png"]
+    
     images = []
-    labels = []
+    labels = [] # lables[i] : label for image images[i]
     labels_to_id = [] # category id -> string label mapping
+    label_counts = {}
     for dir in parent_dir.iterdir():
         if expected_labels and dir.name not in expected_labels:
             # assert dir.name in expected_labels
@@ -89,17 +98,26 @@ def build_dataset_out_of_dir_structure(parent_dir:Path, expected_labels:list=Non
         else:
             print(f"{dir.name} loaded")
         if dir.name not in labels_to_id:
-            labels_to_id.append(dir.name)
-        for img_p in dir.glob('*.jpg'):
+            label_counts[dir.name] = 0
+        for img_p in dir.glob('*'):
+            if img_p.name.split(".")[-1] not in IMG_SUFFIXES:
+                print("unexpected image suffix:", img_p.name.split(".")[-1])
             try:
-                images.append(read_image(str(img_p)).float())
-                labels.append(dir.name)
-            except:
-                print(f"loading {img_p} failed")
-    print(f"labels: {labels_to_id}")
+                img = read_image(str(img_p), mode=ImageReadMode.RGB)
+                if img.shape[0] != 3:
+                    raise Exception(f"error 3 channels img expected,instead got: {img.shape}")
+                else:
+                    images.append(img.float())
+                    labels.append(dir.name)
+                    label_counts[dir.name] += 1
+            except Exception as ex:
+                print(f"loading {img_p} failed:\n{ex}")
     print(f"Dataset of {len(images)} images loaded")
 
-    return tuple(images), tuple(labels), tuple(labels_to_id)
+    with open(parent_dir/CLASSES_FILE, 'r') as f:
+        classes_dict = json.load(f)
+
+    return tuple(images), tuple(labels), tuple(classes_dict['id_to_label']), label_counts
 
 def visualize_sample(dataloader):
     ''''''

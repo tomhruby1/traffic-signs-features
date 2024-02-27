@@ -6,8 +6,10 @@ from torchvision.io import read_image
 from pathlib import Path
 import typing as T
 import numpy as np
+import json
 
-from models import *
+# from .models import *
+
 
 def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path], 
                   in_img_size, softmax_norm=False):
@@ -18,6 +20,8 @@ def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path],
     '''
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
  
+    net.to(device)
+
     if isinstance(img, Path):
         img = read_image(str(img)).float()
  
@@ -36,19 +40,31 @@ def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path],
     else:
         return out    
     
-def get_prediction(img, model_p):
-    model = torch.load(str(model_p))
-    model.eval()
-    out_vec = run_inference(model, img, (128,128), softmax_norm=True).cpu().detach().numpy()
+def get_prediction(img, model, classes_p='traffic_signs_features/total_data_CNN03/info.json'):
+    
+    with open(classes_p) as f:
+        classes_data = json.load(f)
+    
+    id_2_label = classes_data['id_to_label']
 
-    return out_vec
+    model.eval()
+    out_vec = run_inference(model, img, (64,64), softmax_norm=True).cpu().detach().numpy()
+
+    pred_label = id_2_label[np.argmax(out_vec)]
+
+    return out_vec, f"{pred_label}: {np.max(out_vec)}%"
 
 if __name__=='__main__':
-    img_p = Path("Cropped-Traffic-Signs-1obj-27_07_2023/B28/B28_7.jpg")
-    model_p = "resnet-tiny/ResnetTiny_epoch_6.pth"
-    
-    out = get_prediction(img_p, model_p)
+    img_p = Path("traffic_signs_features/Cropped-Traffic-Signs-1obj-27_07_2023/B28/B28_7.jpg")
+    model_p = "traffic_signs_features/resnet_tiny/ResnetTiny_epoch_6.pth"
 
-    print(out)
+    # model =  ModelTinyHruzBottleneck(bottleneck_size=128) # torch.load(str(model_p))
+    # model.load_state_dict(checkpoint['model_state_dict'])
+   
+    model = torch.load(model_p)
 
-    print("out vector sum:", np.sum(out))
+    pred = get_prediction(img_p, model)
+
+    print(pred[1])
+
+    print("out vector sum:", np.sum(pred[0]))
