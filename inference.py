@@ -40,7 +40,8 @@ def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path],
     else:
         return out    
     
-def get_prediction(img, model, classes_p='traffic_signs_features/total_data_CNN03/info.json'):
+def get_prediction(img, model, resize_to=(64,64),
+                   classes_p='traffic_signs_features/total_data_CNN03/info.json'):
     
     with open(classes_p) as f:
         classes_data = json.load(f)
@@ -48,7 +49,7 @@ def get_prediction(img, model, classes_p='traffic_signs_features/total_data_CNN0
     id_2_label = classes_data['id_to_label']
 
     model.eval()
-    out_vec = run_inference(model, img, (64,64), softmax_norm=True).cpu().detach().numpy()
+    out_vec = run_inference(model, img, resize_to, softmax_norm=True).cpu().detach().numpy()
 
     pred_label = id_2_label[np.argmax(out_vec)]
 

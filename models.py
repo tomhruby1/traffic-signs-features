@@ -20,9 +20,9 @@ class Model1Vgg19(nn.Module):
     
 # TODO: flatten the output from the backbone and output as embedding
 class ResnetTiny(nn.Module):
-    # 128 x 128 --> 4 x 4 x 512
     # 224 x 224 --> 7 x 7 x 512
-    def __init__(self, num_out_classes=256, img_size=(128,128)):
+    # 128 x 128 --> 4 x 4 x 512
+    def __init__(self, num_out_classes=254, img_size=(128,128)):
         super().__init__()
         pretrained_model = timm.create_model('resnet10t', pretrained=True)
         # remove the global pooling and last fc layer
@@ -30,10 +30,15 @@ class ResnetTiny(nn.Module):
         self.fc = nn.Linear(4*4*512, num_out_classes)
 
     def forward(self, x):
-        x = self.pretrained_backbone(x)
-        x = torch.flatten(x, start_dim=1)
+        x = self.get_embedding(x)
         x = self.fc(x)
         
+        return x
+    
+    def get_embedding(self, x):
+        x = self.pretrained_backbone(x)
+        x = torch.flatten(x, start_dim=1)
+
         return x
 
 class ModelTinyHruz(nn.Module):
