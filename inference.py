@@ -7,6 +7,7 @@ from pathlib import Path
 import typing as T
 import numpy as np
 import json
+from PIL import Image
 
 # from .models import *
 
@@ -19,12 +20,13 @@ def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path],
         - in_img_size(height,width)
     '''
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
- 
     net.to(device)
 
     if isinstance(img, Path):
         img = read_image(str(img)).float()
- 
+    elif isinstance(img, Image.Image):
+        img = TF.pil_to_tensor(img).float()
+
     # add dummy batch dim TODO: batching?
     img = img.unsqueeze(0)
     img = TF.resize(img, in_img_size).to(device)
@@ -40,9 +42,45 @@ def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path],
     else:
         return out    
     
-def get_prediction(img, model, classes_p='traffic_signs_features/total_data_CNN03/info.json'):
+def run_batched_inference(net:nn.Module, img_batch, in_img_size, softmax_norm=False):       
+    '''
+    Get last layer outputs given model for target input batch 
+    args:
+        - in_img_size(height,width)
+        - img_batch list of Path or of Image or tensor
+    '''
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    net = net.to(device)
     
-    with open(classes_p) as f:
+    imgs = torch.zeros([len(img_batch), 3, in_img_size[0], in_img_size[1]]) # actuall batched img tensor
+    if isinstance(img_batch[0], Path):
+        for i, img_p in enumerate(img_batch):
+            im = read_image(str(img_p)).float()
+            imgs[i,:,:,:] = TF.resize(im, in_img_size)
+    
+    elif isinstance(img_batch[0], Image.Image):
+        for i, img in enumerate(img_batch):
+            im = TF.pil_to_tensor(img).float()
+            imgs[i,:,:,:] = TF.resize(im, in_img_size)
+    else:
+        imgs = img_batch
+     
+    # normalize as done during training
+    imgs = TF.normalize(imgs, (0.0,0.0,0.0), (255,255,255)).to(device)
+    
+    out, embedding = net(imgs)
+    
+    if softmax_norm:
+        out = F.softmax(out)
+    
+    return out, embedding
+
+    
+def get_prediction(img, model):
+
+    CLASSES_P = "/home/tomas/traffi-signs-training/traffic_signs_features/total_data_CNN03/info.json"
+    
+    with open(CLASSES_P) as f:
         classes_data = json.load(f)
     
     id_2_label = classes_data['id_to_label']
