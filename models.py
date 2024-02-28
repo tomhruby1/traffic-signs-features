@@ -91,10 +91,10 @@ class ModelTinyHruzBottleneck(nn.Module):
         self.fc5 = nn.Linear(bottleneck_size, num_out_classes)
     
     def forward(self, x):
-        x = self.get_deep_feature_vector(x)
-        x = F.relu(self.fc5(x))
+        embedding = self.get_deep_feature_vector(x)
+        x = F.relu(self.fc5(embedding))
 
-        return x
+        return x, embedding
     
     def get_deep_feature_vector(self, x):
         '''run forward pass and return the output of the second to last fc layer'''
