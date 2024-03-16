@@ -34,13 +34,13 @@ def run_inference(net:nn.Module, img:T.Union[torch.tensor, Path],
     # normalize as done during training
     img = TF.normalize(img, (0.0,0.0,0.0), (255,255,255))
     
-    out = net(img)
-    out = out.squeeze(0)
+    out, embedding = net(img)
+    out, embedding = out.squeeze(0), embedding.squeeze(0)
     
     if softmax_norm:
-        return F.softmax(out)
+        return F.softmax(out), embedding
     else:
-        return out    
+        return out, embedding    
     
 def run_batched_inference(net:nn.Module, img_batch, in_img_size, softmax_norm=False):       
     '''
@@ -86,7 +86,8 @@ def get_prediction(img, model):
     id_2_label = classes_data['id_to_label']
 
     model.eval()
-    out_vec = run_inference(model, img, (64,64), softmax_norm=True).cpu().detach().numpy()
+    out_vec, embeddings = run_inference(model, img, (128,128), softmax_norm=False)
+    out_vec = out_vec.cpu().detach().numpy()
 
     pred_label = id_2_label[np.argmax(out_vec)]
 

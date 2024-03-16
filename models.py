@@ -30,10 +30,10 @@ class ResnetTiny(nn.Module):
         self.fc = nn.Linear(4*4*512, num_out_classes)
 
     def forward(self, x):
-        x = self.get_embedding(x)
-        x = self.fc(x)
+        emb = self.get_embedding(x)
+        x = self.fc(emb)
         
-        return x
+        return x, emb
     
     def get_embedding(self, x):
         x = self.pretrained_backbone(x)
