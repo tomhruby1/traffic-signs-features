@@ -34,21 +34,43 @@ class Dataset(Dataset):
         label_id = self.id_to_label.index(self.labels[idx])
         return img, torch.tensor(label_id)
     
+    def get_item_of_label(self, label):
+        ''' get a first sample of a training pair given label '''
+        idx = self.labels.index(label)
+        return self.__getitem__(idx)
+
     def get_label(self, label_id):
         '''get category string label given it's id'''
         return self.id_to_label[label_id.item()]
+    
+    def get_num_classes(self):
+        return len(self.id_to_label)
 
 
-def get_data_loaders(imgs, labels, id_to_label, transform=None, train_size=0.8, 
+
+
+# THIS applies transforms to all 3 dataloaders
+def get_data_loaders(imgs, labels, id_to_label, transform:list=None, train_size=0.8, 
                      test_size=0.1, batch_size=16, resize_to=(224,224)) -> T.Tuple[DataLoader, DataLoader, DataLoader]:
     '''Get (train, test, val) dataloaders'''
+    # fix random for reproducible split
+    gen = torch.Generator()
+    gen.manual_seed(123)
+    torch.random.manual_seed(123) # this one is needed! 
+
+    
     # normalization to 0-1
-    transform = transf.Compose([
-        transf.Normalize((0.0,0.0,0.0), (255,255,255)),
+    transf_base = [
+        transf.ConvertImageDtype(torch.float32), # this should also map it to (0-1)...
         # transf.RandomHorizontalFlip(p=0.5),
         # transf.RandomCrop(size=(224,224)) # TODO: not sure about random crop or resize
         transf.Resize(resize_to)
-        ])
+    ]
+    if transform is not None:
+        for t in transform:
+            transf_base.append(t)
+    transform = transf.Compose(transf_base)
+    
     
     dataset = Dataset(imgs, labels, id_to_label, transform=transform)
 
@@ -65,13 +87,23 @@ def get_data_loaders(imgs, labels, id_to_label, transform=None, train_size=0.8,
 def get_smaller_dataloader(size, imgs, labels, id_to_label, transform=None, 
                            batch_size=16, resize_to=(224,224)):
     '''returns dataloader with subset of size size of the dataset'''
+    # fix random for reproducible split
+    gen = torch.Generator()
+    gen.manual_seed(123)
+    torch.random.manual_seed(123) # this one is needed!
+
     # normalization to 0-1
-    transform = transf.Compose([
-        transf.Normalize((0.0,0.0,0.0), (255,255,255)),
+    transf_base = [
+        transf.ConvertImageDtype(torch.float32),
+        # transf.Normalize((0.0,0.0,0.0), (255,255,255)),
         # transf.RandomHorizontalFlip(p=0.5),
         # transf.RandomCrop(size=(224,224)) # TODO: not sure about random crop or resize
         transf.Resize(resize_to)
-    ])
+    ]
+    if transform is not None:
+        for t in transform:
+            transf_base.append(t)
+    transform = transf.Compose(transf_base)
     
     
     dataset = Dataset(imgs, labels, id_to_label, transform=transform)
@@ -99,25 +131,83 @@ def build_dataset_out_of_dir_structure(parent_dir:Path, expected_labels:list=Non
             print(f"{dir.name} loaded")
         if dir.name not in labels_to_id:
             label_counts[dir.name] = 0
-        for img_p in dir.glob('*'):
+        for img_p in dir.rglob('*'):
             if img_p.name.split(".")[-1] not in IMG_SUFFIXES:
                 print("unexpected image suffix:", img_p.name.split(".")[-1])
             try:
-                img = read_image(str(img_p), mode=ImageReadMode.RGB)
+                img = read_image(str(img_p), mode=ImageReadMode.RGB) #  mode=ImageReadMode.UNCHANGED
                 if img.shape[0] != 3:
                     raise Exception(f"error 3 channels img expected,instead got: {img.shape}")
                 else:
-                    images.append(img.float())
+                    images.append(img) # img.float() -- this makes it ugly
                     labels.append(dir.name)
                     label_counts[dir.name] += 1
             except Exception as ex:
                 print(f"loading {img_p} failed:\n{ex}")
     print(f"Dataset of {len(images)} images loaded")
 
-    with open(parent_dir/CLASSES_FILE, 'r') as f:
-        classes_dict = json.load(f)
+    try:
+        with open(parent_dir/CLASSES_FILE, 'r') as f:
+            classes_dict = json.load(f)
+    except Exception as ex:
+        print(f"could not find {parent_dir/CLASSES_FILE}")
+        print("looking into the parent dir")
+        with open(parent_dir.parent/CLASSES_FILE) as f:
+            classes_dict = json.load(f)
+        print("loaded")
 
     return tuple(images), tuple(labels), tuple(classes_dict['id_to_label']), label_counts
+
+def build_per_class_datasets_out_of_dir_structure(parent_dir:Path, id_2_label):
+    ''' returns dict: label->torch.Dataset'''
+    
+    IMG_SUFFIXES = ["jpg","png"]
+    datasets = {}
+    for dir in parent_dir.iterdir():
+        images = []
+        labels = []
+        for img_p in dir.rglob('*'):
+            if img_p.name.split(".")[-1] not in IMG_SUFFIXES:
+                print("unexpected image suffix:", img_p.name.split(".")[-1])
+            try:
+                img = read_image(str(img_p), mode=ImageReadMode.RGB) #  mode=ImageReadMode.UNCHANGED
+                if img.shape[0] != 3:
+                    raise Exception(f"error 3 channels img expected,instead got: {img.shape}")
+                else:
+                    images.append(img)
+                    labels.append(dir.name)
+            except Exception as ex:
+                print(f"loading {img_p} failed:\n{ex}")
+        datasets[dir.name] = Dataset(images, labels, id_2_label, transform=None)
+        print(f"dataset of {dir.name} built")
+    
+    return datasets
+
+def split_per_class_dataset(dataset, train_size=0.8, test_size=0.1) -> T.Tuple[Dataset,Dataset,Dataset]:
+    ''' returns (train, val, test) tuple of datasets'''
+    gen = torch.Generator()
+    gen.manual_seed(123)
+    torch.random.manual_seed(123) # this one is needed!
+
+    train_len = int(np.round(dataset.__len__() * train_size))
+    test_len = int(np.round(dataset.__len__() * test_size))
+    val_len = dataset.__len__() - train_len - test_len
+    print(f"split; train:{train_len}, val:{val_len}, test:{test_len}, ")
+
+    return random_split(dataset, [train_len, val_len, test_len])
+
+
+def serialize_per_class_datasets(datasets:dict, target_parent_dir:Path):
+    ''' store dictionary of label->torch.Dataset to dir structure'''
+    from torchvision.transforms.functional import to_pil_image
+    # TODO: before saving each dataset do a split + optionally to train add transform
+    for label, dataset in datasets.items():
+        (target_parent_dir/label).mkdir()
+        for idx in range(len(dataset)):
+            img, img_label = dataset.__getitem__(idx)
+            assert dataset.dataset.id_to_label[img_label.item()] == label
+            img_pil = to_pil_image(img)
+            img_pil.save(target_parent_dir/label/f"{idx}.jpg")
 
 def visualize_sample(dataloader):
     ''''''
@@ -137,18 +227,23 @@ def visualize_sample(dataloader):
 
 
 if __name__=='__main__':
-    SIGNS_CATEGORY_NAMES = (
-        'A10', 'A11', 'A12', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A1a', 'A1b', 'A22', 'A24', 'A28', 'A29', 'A2a', 'A2b', 'A30', 'A31a', 'A31b', 'A31c', 'A32a', 'A32b', 'A4', 'A5a', 'A6a', 'A6b', 'A7a', 'A8', 'A9', 'B1', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B19', 'B2', 'B20a', 'B20b', 'B21a', 'B21b', 'B24a', 'B24b', 'B26', 'B28', 'B29', 'B32', 'B4', 'B5', 'B6', 'C1', 'C10a', 'C10b', 'C13a', 'C14a', 'C2a', 'C2b', 'C2c', 'C2d', 'C2e', 'C2f', 'C3a', 'C3b', 'C4a', 'C4b', 'C4c', 'C7a', 'C9a', 'C9b', 'E1', 'E11', 'E11c', 'E12', 'E13', 'E2a', 'E2b', 'E2c', 'E2d', 'E3a', 'E3b', 'E4', 'E5', 'E6', 'E7a', 'E7b', 'E8a', 'E8b', 'E8c', 'E8d', 'E8e', 'E9', 'I2', 'IJ1', 'IJ10', 'IJ11a', 'IJ11b', 'IJ14c', 'IJ15', 'IJ2', 'IJ3', 'IJ4a', 'IJ4b', 'IJ4c', 'IJ4d', 'IJ4e', 'IJ5', 'IJ6', 'IJ7', 'IJ8', 'IJ9', 'IP10a', 'IP10b', 'IP11a', 'IP11b', 'IP11c', 'IP11e', 'IP11g', 'IP12', 'IP13a', 'IP13b', 'IP13c', 'IP13d', 'IP14a', 'IP15a', 'IP15b', 'IP16', 'IP17', 'IP18a', 'IP18b', 'IP19', 'IP2', 'IP21', 'IP21a', 'IP22', 'IP25a', 'IP25b', 'IP26a', 'IP26b', 'IP27a', 'IP3', 'IP31a', 'IP4a', 'IP4b', 'IP5', 'IP6', 'IP7', 'IP8a', 'IP8b', 'IS10b', 'IS11a', 'IS11b', 'IS11c', 'IS12a', 'IS12b', 'IS12c', 'IS13', 'IS14', 'IS15a', 'IS15b', 'IS16b', 'IS16c', 'IS16d', 'IS17', 'IS18a', 'IS18b', 'IS19a', 'IS19b', 'IS19c', 'IS19d', 'IS1a', 'IS1b', 'IS1c', 'IS1d', 'IS20', 'IS21a', 'IS21b', 'IS21c', 'IS22a', 'IS22c', 'IS22d', 'IS22e', 'IS22f', 'IS23', 'IS24a', 'IS24b', 'IS24c', 'IS2a', 'IS2b', 'IS2c', 'IS2d', 'IS3a', 'IS3b', 'IS3c', 'IS3d', 'IS4a', 'IS4b', 'IS4c', 'IS4d', 'IS5', 'IS6a', 'IS6b', 'IS6c', 'IS6e', 'IS6f', 'IS6g', 'IS7a', 'IS8a', 'IS8b', 'IS9a', 'IS9b', 'IS9c', 'IS9d', 'O2', 'P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8', 'UNKNOWN', 'X1', 'X2', 'X3', 'XXX', 'Z2', 'Z3', 'Z4a', 'Z4b', 'Z4c', 'Z4d', 'Z4e', 'Z7', 'Z9'
-    ) 
 
+    # this vvv 
     
-    img_dir = 'total_data_CNN03'
-    
-    imgs, labls, labls_2_id = build_dataset_out_of_dir_structure(Path(img_dir), expected_labels=SIGNS_CATEGORY_NAMES)
+    IMG_DIR = 'traffic_signs_features/total_data_merged_filt'
 
-    # dataloaders
-    train_data, test_data, val_data = get_data_loaders(imgs, labls, labls_2_id)
+    # load dataset to memory
+    imgs, labls, labls_2_id, cls_occurances = build_dataset_out_of_dir_structure(Path(IMG_DIR))
 
-    visualize_sample(train_data)
-    
-    print()
+    TARGET_PARENT_DIR = Path('traffic_signs_features/new_dataset')
+
+    datasets = build_per_class_datasets_out_of_dir_structure(Path(IMG_DIR), labls_2_id)
+
+    datasets_train, datasets_val, datasets_test = {}, {}, {}
+    for label, dataset in datasets.items():
+        datasets_train[label], datasets_val[label], datasets_test[label] = split_per_class_dataset(dataset)
+
+
+    for data_section in [('train', datasets_train), ('val', datasets_val), ('test', datasets_test)]:
+        (TARGET_PARENT_DIR/data_section[0]).mkdir(parents=True)
+        serialize_per_class_datasets(data_section[1], TARGET_PARENT_DIR/data_section[0])

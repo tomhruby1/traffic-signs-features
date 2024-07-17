@@ -76,26 +76,27 @@ def run_batched_inference(net:nn.Module, img_batch, in_img_size, softmax_norm=Fa
     return out, embedding
 
     
-def get_prediction(img, model):
+def get_prediction(img, model, id_2_label=None, resize_to=(128,128)):
 
-    CLASSES_P = "/home/tomas/traffi-signs-training/traffic_signs_features/total_data_CNN03/info.json"
-    
-    with open(CLASSES_P) as f:
-        classes_data = json.load(f)
-    
-    id_2_label = classes_data['id_to_label']
+    if id_2_label is None:
+        CLASSES_P = "/home/tomas/traffi-signs-training/traffic_signs_features/total_data_CNN03/info.json"
+        
+        with open(CLASSES_P) as f:
+            classes_data = json.load(f)
+        
+        id_2_label = classes_data['id_to_label']
 
     model.eval()
-    out_vec, embeddings = run_inference(model, img, (128,128), softmax_norm=False)
+    out_vec, embeddings = run_inference(model, img, resize_to, softmax_norm=True)
     out_vec = out_vec.cpu().detach().numpy()
 
     pred_label = id_2_label[np.argmax(out_vec)]
 
-    return out_vec, f"{pred_label}: {np.max(out_vec)}%"
+    return out_vec, f"{pred_label}: {np.max(out_vec)*100:.2f}%"
 
 if __name__=='__main__':
     img_p = Path("traffic_signs_features/Cropped-Traffic-Signs-1obj-27_07_2023/B28/B28_7.jpg")
-    model_p = "traffic_signs_features/resnet_tiny/ResnetTiny_epoch_6.pth"
+    model_p = "tinyResnet_128x128_filt/ResnetTiny_epoch_8.pth"
 
     # model =  ModelTinyHruzBottleneck(bottleneck_size=128) # torch.load(str(model_p))
     # model.load_state_dict(checkpoint['model_state_dict'])
